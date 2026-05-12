@@ -1,0 +1,367 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="StudyPortal">
+    <link rel="apple-touch-icon" href="https://cdn-icons-png.flaticon.com/512/564/564429.png">
+    
+    <title>Piano Black Study Portal v2.3</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        :root {
+            --bg-deep: #000000;
+            --card-solid: #111111;
+            --accent-focus: #ffffff;
+            --accent-rest: #4ade80;
+            --text-p: #ffffff;
+            --text-s: #888888;
+            --border: #222222;
+            --radius: 12px;
+        }
+        * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+        body { 
+            min-height: 100vh;
+            background-color: var(--bg-deep);
+            background-size: cover;
+            background-position: center;
+            background-attachment: fixed;
+            font-family: "Helvetica Neue", Arial, sans-serif;
+            color: var(--text-p);
+            padding-top: env(safe-area-inset-top);
+        }
+        .overlay { padding: 20px; min-height: 100vh; background: rgba(0, 0, 0, 0.4); }
+        .container { max-width: 550px; margin: 0 auto; }
+        .card { 
+            background: var(--card-solid); 
+            border-radius: var(--radius); 
+            padding: 24px; 
+            margin-bottom: 16px; 
+            border: 1px solid var(--border);
+            box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+        }
+        .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
+        .page-title { font-size: 16px; font-weight: 200; letter-spacing: 0.2em; text-transform: uppercase; }
+        .section-title { font-size: 10px; font-weight: 700; color: var(--text-s); text-transform: uppercase; letter-spacing: 0.2em; margin-bottom: 12px; display: flex; align-items: center; }
+        .section-title::after { content: ""; flex: 1; height: 1px; background: var(--border); margin-left: 10px; }
+        .timer-display { font-size: 80px; font-weight: 100; text-align: center; margin: 5px 0; font-variant-numeric: tabular-nums; letter-spacing: -2px; }
+        .mode-badge { display: table; margin: 0 auto 8px; padding: 2px 12px; border-radius: 4px; font-size: 10px; font-weight: 700; border: 1px solid var(--accent-focus); color: var(--accent-focus); letter-spacing: 0.1em; }
+        .mode-badge.rest { border-color: var(--accent-rest); color: var(--accent-rest); }
+        .btn-group { display: flex; gap: 8px; margin-top: 15px; }
+        .btn { flex: 1; padding: 14px; border-radius: 8px; border: none; font-weight: 600; cursor: pointer; transition: 0.2s; font-size: 13px; text-transform: uppercase; }
+        .btn-primary { background: white; color: black; }
+        .btn-danger { background: transparent; color: #ff4444; border: 1px solid #442222; }
+        .btn-outline { background: #1a1a1a; border: 1px solid var(--border); color: white; }
+        #audio-area { margin-top: 10px; border-top: 1px solid var(--border); padding-top: 15px; display: none; }
+        .audio-title { font-size: 11px; color: var(--text-s); margin-bottom: 8px; text-align: center; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        audio { width: 100%; height: 35px; filter: invert(1) hue-rotate(180deg); }
+        .chips-group { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 16px; }
+        .chip { background: transparent; border: 1px solid var(--border); color: var(--text-s); padding: 8px 14px; border-radius: 4px; font-size: 12px; cursor: pointer; }
+        .chip.selected { border-color: white; color: white; background: rgba(255,255,255,0.1); }
+        .bg-picker-label { font-size: 10px; color: var(--text-s); cursor: pointer; text-decoration: underline; }
+        input { background: #000; color: white; border: 1px solid var(--border); padding: 12px; border-radius: 6px; width: 100%; margin-bottom: 10px; font-size: 14px; }
+        .res-item { background: rgba(255,255,255,0.03); padding: 12px; border-radius: 8px; margin-bottom: 8px; font-size: 13px; border: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center; }
+        .res-content { cursor: pointer; flex: 1; display: flex; align-items: center; }
+        .del-btn { color: #ff4444; margin-left: 15px; padding: 5px 10px; font-size: 16px; font-weight: bold; cursor: pointer; opacity: 0.5; }
+        .del-btn:hover { opacity: 1; }
+    </style>
+</head>
+<body>
+
+<div class="overlay">
+    <div class="container">
+        <div class="header">
+            <h1 class="page-title" id="display-exam-name">Black Workspace</h1>
+            <label class="bg-picker-label">BG変更
+                <input type="file" id="bg-upload" hidden accept="image/*">
+            </label>
+            <button onclick="toggleSettings()" style="background:none; border:none; color:white; cursor:pointer; font-size:12px; text-decoration:underline;">CONFIG</button>
+        </div>
+
+        <div class="card">
+            <div class="section-title">データ分析</div>
+            <div style="height: 110px; margin-bottom: 15px;"><canvas id="studyChart"></canvas></div>
+            <div style="display:grid; grid-template-columns: repeat(3, 1fr); text-align:center;">
+                <div><div id="total-sessions" style="font-size:18px;">0</div><div style="font-size:9px; color:var(--text-s);">セッション</div></div>
+                <div><div id="total-hours" style="font-size:18px;">0m</div><div style="font-size:9px; color:var(--text-s);">合計</div></div>
+                <div><div id="days-left" style="font-size:18px;">—</div><div style="font-size:9px; color:var(--text-s);">残り日数</div></div>
+            </div>
+        </div>
+
+        <div class="card">
+            <div id="m-label" class="mode-badge">集中モード</div>
+            <div id="delay-info" style="display:none; text-align:center; color:var(--accent-rest); font-size:11px; margin-bottom:5px;">
+                開始まで <span id="delay-timer">03:00</span>
+            </div>
+            <div class="timer-display" id="timer">25:00</div>
+            <div style="display:flex; justify-content:center; gap:30px; margin-top:-10px;">
+                <button onclick="adjT(-300)" style="background:none; border:none; color:#333; cursor:pointer;">-5m</button>
+                <button onclick="adjT(300)" style="background:none; border:none; color:#333; cursor:pointer;">+5m</button>
+            </div>
+            <div class="btn-group">
+                <button class="btn btn-primary" id="sbtn" onclick="toggleT()">スタート</button>
+                <button class="btn btn-danger" onclick="fReset()">リセット</button>
+            </div>
+            <button class="btn btn-outline" style="width:100%; margin-top:10px;" onclick="sDelay(3)">スケジュール（3分後）</button>
+            <div id="audio-area">
+                <div class="audio-title" id="audio-title">再生待機中</div>
+                <audio id="main-audio" controls></audio>
+                <button onclick="closeAudio()" style="display:block; margin:8px auto 0; background:none; border:none; color:var(--text-s); font-size:10px; cursor:pointer;">[ プレイヤーを閉じる ]</button>
+            </div>
+        </div>
+
+        <div class="card">
+            <div class="section-title">ログ記録</div>
+            <div id="b-list" class="chips-group"></div>
+            <div id="p-list" class="chips-group"></div>
+            <button class="btn btn-primary" style="width:100%; background:#fff; color:#000;" onclick="saveLog()">セッションを保存</button>
+            <div style="text-align:center; margin-top:12px; font-size:11px; color:var(--text-s);">現在: <span id="acc-time" style="color:white;">0</span> 分</div>
+        </div>
+
+        <div class="card">
+            <div class="section-title">音声リソース</div>
+            <div id="res-list"></div>
+        </div>
+
+        <div id="settings-panel" class="card" style="display:none;">
+            <div class="section-title">設定</div>
+            <input type="text" id="cfg-exam" placeholder="試験名">
+            <input type="date" id="cfg-date">
+            <input type="text" id="cfg-books" placeholder="テキスト（カンマ区切り）">
+            <input type="text" id="cfg-places" placeholder="場所（カンマ区切り）">
+            <div style="display:flex; gap:5px;">
+                <input type="text" id="res-n" placeholder="音声名" style="flex:1;">
+                <input type="text" id="res-u" placeholder="URL / YouTube" style="flex:1;">
+            </div>
+            <button class="btn btn-outline" style="width:100%; margin-bottom:10px;" onclick="addRes()">リソースを追加</button>
+            <button class="btn btn-primary" style="width:100%;" onclick="saveCfg()">設定を保存</button>
+        </div>
+
+        <div class="card">
+            <div class="section-title">最近の履歴</div>
+            <div id="hist"></div>
+        </div>
+    </div>
+</div>
+
+<script>
+// 音声再生をGitHubのHTTPSに対応させるための準備
+let audioCtx = null;
+function initAudio() {
+    if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+}
+
+function beep(f){ 
+    initAudio();
+    const o=audioCtx.createOscillator(); 
+    const g=audioCtx.createGain(); 
+    o.connect(g); g.connect(audioCtx.destination); 
+    o.frequency.setValueAtTime(f?1000:500, audioCtx.currentTime); 
+    g.gain.setValueAtTime(0.03, audioCtx.currentTime); 
+    o.start(); o.stop(audioCtx.currentTime + 0.3); 
+}
+
+let cfg = JSON.parse(localStorage.getItem('st_cfg_piano_v2')) || { exam:"IT試験", date:"2026-05-31", books:["Chapter 6","Chapter 7","Chapter 8"], places:["自宅","chocoZAP"], res:[] };
+let logs = JSON.parse(localStorage.getItem('st_log_piano_v2')) || [];
+let dInterval, remain=25*60, run=false, mode='f', acc=0, selB='', selP='', chart;
+let swReg = null;
+let targetTime = null, accBase = 0, accStartTime = null;
+let worker = null;
+
+// 通知の初期化
+async function initNotifications() {
+    if (!('Notification' in window)) return;
+    if (Notification.permission === 'default') {
+        await Notification.requestPermission();
+    }
+}
+initNotifications();
+
+function sendNotification(title, body, tag) {
+    beep(tag === 'focus-end');
+    if (Notification.permission === 'granted') {
+        new Notification(title, { body, icon: 'https://cdn-icons-png.flaticon.com/512/564/564429.png' });
+    }
+}
+
+document.getElementById('bg-upload').addEventListener('change', function(e) {
+    const reader = new FileReader();
+    reader.onload = function(event) { document.body.style.backgroundImage = `url(${event.target.result})`; localStorage.setItem('st_bg_piano_v2', event.target.result); };
+    reader.readAsDataURL(e.target.files[0]);
+});
+const savedBg = localStorage.getItem('st_bg_piano_v2');
+if(savedBg) document.body.style.backgroundImage = `url(${savedBg})`;
+
+function getAcc() {
+    if(run && mode==='f' && accStartTime !== null) {
+        return accBase + Math.floor((Date.now() - accStartTime) / 1000);
+    }
+    return accBase;
+}
+function updateUI() {
+    const m = Math.floor(remain/60), s = remain%60;
+    document.getElementById('timer').textContent = `${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`;
+    document.getElementById('acc-time').textContent = Math.floor(getAcc()/60);
+    const badge = document.getElementById('m-label');
+    if(mode==='f'){ badge.textContent="集中モード"; badge.className="mode-badge"; }
+    else { badge.textContent="休憩モード"; badge.className="mode-badge rest"; }
+}
+function tick() {
+    if(!run) return;
+    remain = Math.max(0, Math.round((targetTime - Date.now()) / 1000));
+    updateUI();
+    if(remain <= 0) {
+        stopWorker();
+        run = false;
+        if(mode==='f'){
+            accBase = getAcc(); accStartTime = null;
+            sendNotification('⏰ 集中タイム終了！', '休憩を取りましょう。お疲れさまでした！', 'focus-end');
+            mode='r'; remain=5*60;
+        } else {
+            sendNotification('✅ 休憩終了！', '次のセッションを始めましょう！', 'rest-end');
+            mode='f'; remain=25*60;
+        }
+        toggleT();
+    }
+}
+function startWorker() {
+    if(!worker) {
+        // パスを GitHub Pages 用に ./ に修正
+        worker = new Worker('./timer-worker.js');
+        worker.onmessage = () => tick();
+    }
+    worker.postMessage('start');
+}
+function stopWorker() {
+    if(worker) worker.postMessage('stop');
+}
+function toggleT() {
+    initAudio(); // ユーザー操作時にAudioContextを開始
+    if(!run){
+        run=true;
+        targetTime = Date.now() + remain * 1000;
+        if(mode==='f') accStartTime = Date.now();
+        document.getElementById('sbtn').textContent="ストップ";
+        startWorker();
+    } else {
+        stopWorker();
+        if(mode==='f'){ accBase = getAcc(); accStartTime = null; }
+        remain = Math.max(0, Math.round((targetTime - Date.now()) / 1000));
+        run=false;
+        document.getElementById('sbtn').textContent="スタート";
+        updateUI();
+    }
+}
+function fReset(){
+    if(confirm("セッションデータをリセットしますか？")){
+        stopWorker(); run=false; mode='f'; remain=25*60;
+        accBase=0; accStartTime=null; targetTime=null;
+        document.getElementById('sbtn').textContent="スタート";
+        updateUI();
+    }
+}
+function adjT(s){
+    remain = Math.max(0, remain + s);
+    if(run) targetTime = Date.now() + remain * 1000;
+    updateUI();
+}
+
+document.addEventListener('visibilitychange', () => {
+    if(!document.hidden && run) {
+        remain = Math.max(0, Math.round((targetTime - Date.now()) / 1000));
+        updateUI();
+    }
+});
+function sDelay(m){
+    cancelDelay(); let s=m*60; document.getElementById('delay-info').style.display='block';
+    dInterval=setInterval(()=>{
+        s--; document.getElementById('delay-timer').textContent=`${String(Math.floor(s/60)).padStart(2,'0')}:${String(s%60).padStart(2,'0')}`;
+        if(s<=0){ cancelDelay(); if(!run)toggleT(); }
+    },1000);
+}
+function cancelDelay(){ clearInterval(dInterval); document.getElementById('delay-info').style.display='none'; }
+function saveLog(){
+    const mins = Math.floor(getAcc()/60);
+    if(!selB || !selP || mins < 1) return alert("タグを選択し、1分以上学習してください。");
+    const today = new Date().toLocaleDateString('ja-JP');
+    logs.unshift({b:selB, p:selP, t:mins, d:today});
+    localStorage.setItem('st_log_piano_v2', JSON.stringify(logs));
+    accBase=0; accStartTime = run && mode==='f' ? Date.now() : null;
+    updateUI(); renderLogs(); updateChart();
+    alert("保存しました。");
+}
+function saveCfg(){
+    cfg.exam=document.getElementById('cfg-exam').value; cfg.date=document.getElementById('cfg-date').value;
+    cfg.books=document.getElementById('cfg-books').value.split(',').map(s=>s.trim());
+    cfg.places=document.getElementById('cfg-places').value.split(',').map(s=>s.trim());
+    localStorage.setItem('st_cfg_piano_v2', JSON.stringify(cfg)); location.reload();
+}
+function addRes(){
+    const n=document.getElementById('res-n').value, u=document.getElementById('res-u').value;
+    if(n&&u){ cfg.res.push({n,u}); localStorage.setItem('st_cfg_piano_v2', JSON.stringify(cfg)); renderRes(); }
+}
+function delRes(index){
+    if(confirm("このリソースを削除しますか？")){
+        cfg.res.splice(index, 1);
+        localStorage.setItem('st_cfg_piano_v2', JSON.stringify(cfg));
+        renderRes();
+    }
+}
+function playRes(r){
+    initAudio();
+    if(r.u.includes('youtube.com') || r.u.includes('youtu.be')){ 
+        window.open(r.u, 'studyPlayer', 'width=800,height=600'); 
+    }
+    else if (r.u.match(/\.(mp3|wav|ogg|m4a)$/i) || !r.u.includes('youtu')) {
+        document.getElementById('audio-area').style.display='block';
+        document.getElementById('audio-title').textContent = "再生中: " + r.n;
+        const ad = document.getElementById('main-audio'); 
+        ad.src=r.u; ad.play();
+    }
+}
+function closeAudio() {
+    const ad = document.getElementById('main-audio');
+    ad.pause(); document.getElementById('audio-area').style.display='none';
+}
+function renderRes(){
+    document.getElementById('res-list').innerHTML = cfg.res.map((r, index)=>`
+        <div class="res-item">
+            <div class="res-content" onclick='playRes(${JSON.stringify(r)})'>
+                <span>${r.u.includes('youtu')?'📺':'🎵'} ${r.n}</span>
+            </div>
+            <span class="del-btn" onclick="event.stopPropagation(); delRes(${index})">×</span>
+        </div>`).join('');
+}
+function renderLogs(){
+    document.getElementById('hist').innerHTML = logs.slice(0,3).map(l=>`<div style="font-size:11px; padding:12px 0; border-bottom:1px solid var(--border); display:flex; justify-content:space-between; color:var(--text-s);"><span>${l.d} | ${l.b} @ ${l.p}</span><b style="color:white;">${l.t}m</b></div>`).join('');
+    document.getElementById('total-sessions').textContent = logs.length;
+    document.getElementById('total-hours').textContent = logs.reduce((a,b)=>a+b.t,0) + "m";
+    const days = Math.ceil((new Date(cfg.date) - new Date()) / 864e5);
+    document.getElementById('days-left').textContent = days > 0 ? days : "0";
+}
+function renderOpt(){
+    document.getElementById('b-list').innerHTML = cfg.books.map(b=>`<button class="chip" onclick="sel(this,'b','${b}')">${b}</button>`).join('');
+    document.getElementById('p-list').innerHTML = cfg.places.map(p=>`<button class="chip" onclick="sel(this,'p','${p}')">${p}</button>`).join('');
+}
+function sel(e,t,v){ e.parentElement.querySelectorAll('.chip').forEach(c=>c.classList.remove('selected')); e.classList.add('selected'); if(t==='b')selB=v; else selP=v; }
+function updateChart(){
+    const ctx = document.getElementById('studyChart').getContext('2d');
+    const labels = []; const dataMap = {};
+    for(let i=6; i>=0; i--){ const d = new Date(); d.setDate(d.getDate()-i); labels.push((d.getMonth()+1)+"/"+d.getDate()); dataMap[d.toLocaleDateString('ja-JP')] = 0; }
+    logs.forEach(l => { if(dataMap[l.d]!==undefined) dataMap[l.d] += l.t; });
+    if(chart) chart.destroy();
+    chart = new Chart(ctx, {
+        type: 'bar',
+        data: { labels, datasets:[{ label:'分', data:Object.values(dataMap), backgroundColor:'white', borderRadius:2 }] },
+        options: { maintainAspectRatio:false, plugins:{legend:{display:false}}, scales:{y:{beginAtZero:true, grid:{color:'#222'}, ticks:{color:'#444'}}, x:{grid:{display:false}, ticks:{color:'#444'}}} }
+    });
+}
+function toggleSettings(){ const s=document.getElementById('settings-panel'); s.style.display=s.style.display==='none'?'block':'none'; }
+document.getElementById('display-exam-name').textContent = cfg.exam;
+renderOpt(); renderRes(); renderLogs(); updateChart(); updateUI();
+</script>
+</body>
+</html>
