@@ -294,10 +294,29 @@ function saveLog(){
     alert("保存しました。");
 }
 function saveCfg(){
-    cfg.exam=document.getElementById('cfg-exam').value; cfg.date=document.getElementById('cfg-date').value;
-    cfg.books=document.getElementById('cfg-books').value.split(',').map(s=>s.trim());
-    cfg.places=document.getElementById('cfg-places').value.split(',').map(s=>s.trim());
-    localStorage.setItem('st_cfg_piano_v2', JSON.stringify(cfg)); location.reload();
+    // 入力がある項目だけ更新し、空欄なら今の設定を維持する
+    const newExam = document.getElementById('cfg-exam').value;
+    const newDate = document.getElementById('cfg-date').value;
+    const newBooks = document.getElementById('cfg-books').value;
+    const newPlaces = document.getElementById('cfg-places').value;
+
+    if(newExam) cfg.exam = newExam;
+    if(newDate) cfg.date = newDate;
+    if(newBooks) cfg.books = newBooks.split(',').map(s=>s.trim());
+    if(newPlaces) cfg.places = newPlaces.split(',').map(s=>s.trim());
+    
+    // 保存
+    localStorage.setItem('st_cfg_piano_v2', JSON.stringify(cfg));
+    
+    // 画面をリロードせずに表示だけ更新
+    document.getElementById('display-exam-name').textContent = cfg.exam;
+    renderOpt();
+    renderLogs();
+    updateChart();
+    
+    // 設定パネルを閉じる
+    toggleSettings();
+    alert("設定を保存しました。入力中のデータは保持されています。");
 }
 function addRes(){
     const n=document.getElementById('res-n').value, u=document.getElementById('res-u').value;
