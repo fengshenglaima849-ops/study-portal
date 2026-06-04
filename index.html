@@ -65,7 +65,6 @@
         .res-content { cursor: pointer; flex: 1; display: flex; align-items: center; }
         .del-btn { color: #ff4444; margin-left: 15px; padding: 5px 10px; font-size: 16px; font-weight: bold; cursor: pointer; opacity: 0.5; }
         .del-btn:hover { opacity: 1; }
-        /* 設定パネルのタグ追加UI */
         .tag-input-row { display: flex; gap: 6px; margin-bottom: 8px; }
         .tag-input-row input { margin-bottom: 0; flex: 1; }
         .tag-add-btn { background: #1a1a1a; border: 1px solid var(--border); color: white; padding: 8px 14px; border-radius: 6px; font-size: 12px; cursor: pointer; white-space: nowrap; }
@@ -73,6 +72,18 @@
         .tag-chip { background: #1a1a1a; border: 1px solid var(--border); color: var(--text-s); padding: 4px 10px; border-radius: 4px; font-size: 11px; display: flex; align-items: center; gap: 6px; }
         .tag-chip-del { color: #ff4444; cursor: pointer; font-weight: bold; font-size: 13px; line-height: 1; }
         .cfg-label { font-size: 10px; color: var(--text-s); letter-spacing: 0.1em; text-transform: uppercase; margin-bottom: 6px; margin-top: 4px; }
+
+        /* タイマー終了フラッシュ */
+        @keyframes timerFlash {
+            0%   { opacity: 1; }
+            25%  { opacity: 0.1; }
+            50%  { opacity: 1; }
+            75%  { opacity: 0.1; }
+            100% { opacity: 1; }
+        }
+        .timer-flash {
+            animation: timerFlash 0.6s ease-in-out 3;
+        }
     </style>
 </head>
 <body>
@@ -128,8 +139,9 @@
             <div id="p-list" class="chips-group"></div>
             <button class="btn btn-primary" style="width:100%; background:#fff; color:#000;" onclick="saveLog()">セッションを保存</button>
             <div style="text-align:center; margin-top:12px; font-size:11px; color:var(--text-s);">
-                現在: <span id="acc-time" style="color:white;">0</span> 分
-                <span id="total-acc-indicator" style="color:var(--text-s); margin-left:8px;"></span>
+                累計集中時間: <span id="acc-time" style="color:white; font-size:14px; font-weight:600;">0</span> 分
+                <span style="color:#444; margin:0 6px;">|</span>
+                <span id="acc-sessions" style="color:var(--text-s);">保存前の合計</span>
             </div>
         </div>
 
@@ -183,22 +195,38 @@
 
 <script>
 // =====================
-// AudioContext & Beep
+// AudioContext
 // =====================
 let audioCtx = null;
+
+// ユーザー操作時に呼ぶ。iOS Safari対応: resume()必須
 function initAudio() {
-    if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    if (!audioCtx) {
+        audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    }
+    if (audioCtx.state === 'suspended') {
+        audioCtx.resume();
+    }
 }
 
 /**
- * iPhoneやiPadでのイヤホン対応ビープ音
+ * 修正版ビープ音
+ * - resume() を await してから音を鳴らすことでiOSでも確実に動作
+ * - 音量を0.12→0.3に増加（聞こえやすく）
  * type: 'focus-end' = 高音3連打, 'rest-end' = 低音2連打
  */
-function beepAlert(type) {
-    initAudio();
+async function beepAlert(type) {
+    if (!audioCtx) {
+        // AudioContextが未初期化の場合は新規作成して即resume
+        audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    }
+    if (audioCtx.state === 'suspended') {
+        try { await audioCtx.resume(); } catch(e) { console.warn('resume failed', e); return; }
+    }
+
     const patterns = {
         'focus-end': [{f:880, t:0}, {f:880, t:0.35}, {f:1100, t:0.7}],
-        'rest-end':  [{f:440, t:0}, {f:550, t:0.4}]
+        'rest-end':  [{f:440, t:0}, {f:550, t:0.45}]
     };
     const p = patterns[type] || patterns['focus-end'];
     p.forEach(({f, t}) => {
@@ -208,13 +236,59 @@ function beepAlert(type) {
         g.connect(audioCtx.destination);
         o.frequency.value = f;
         o.type = 'sine';
-        const start = audioCtx.currentTime + t;
+        const now = audioCtx.currentTime;
+        const start = now + t;
         g.gain.setValueAtTime(0, start);
-        g.gain.linearRampToValueAtTime(0.12, start + 0.02);
-        g.gain.linearRampToValueAtTime(0, start + 0.28);
+        g.gain.linearRampToValueAtTime(0.3, start + 0.02);
+        g.gain.linearRampToValueAtTime(0, start + 0.3);
         o.start(start);
-        o.stop(start + 0.3);
+        o.stop(start + 0.35);
     });
+}
+
+// =====================
+// 音楽停止 & 視覚フィードバック
+// =====================
+function stopMusicOnTimerEnd() {
+    const audio = document.getElementById('main-audio');
+    if (audio && !audio.paused) {
+        audio.pause();
+        const titleEl = document.getElementById('audio-title');
+        if (titleEl) titleEl.textContent = '⏹ タイマー終了により停止しました';
+    }
+}
+
+function flashTimer() {
+    const el = document.getElementById('timer');
+    el.classList.remove('timer-flash');
+    void el.offsetWidth; // reflow で再アニメーション
+    el.classList.add('timer-flash');
+    el.addEventListener('animationend', () => el.classList.remove('timer-flash'), { once: true });
+}
+
+// =====================
+// Notifications
+// =====================
+async function initNotifications() {
+    if (!('Notification' in window)) return;
+    if (Notification.permission === 'default') {
+        await Notification.requestPermission();
+    }
+}
+initNotifications();
+
+async function sendNotification(title, body, type) {
+    // 音 + 音楽停止 + 画面フラッシュ を同時に実行
+    await beepAlert(type);
+    stopMusicOnTimerEnd();
+    flashTimer();
+
+    if (Notification.permission === 'granted') {
+        new Notification(title, {
+            body,
+            icon: 'https://cdn-icons-png.flaticon.com/512/564/564429.png'
+        });
+    }
 }
 
 // =====================
@@ -234,31 +308,8 @@ let selB = '', selP = '', chart;
 let targetTime = null;
 let worker = null;
 
-// accSessions: 保存済みセッションを除いた「現在進行中の累積時間（秒）」
-// saveLog()を押しても現在走っているタイマー分は残す
-let accBase = 0;          // 現在セッション内の累積（秒、停止中に積み上げ）
-let accStartTime = null;  // 集中モードが走り始めた時刻
-
-// =====================
-// Notifications
-// =====================
-async function initNotifications() {
-    if (!('Notification' in window)) return;
-    if (Notification.permission === 'default') {
-        await Notification.requestPermission();
-    }
-}
-initNotifications();
-
-function sendNotification(title, body, type) {
-    beepAlert(type);
-    if (Notification.permission === 'granted') {
-        new Notification(title, {
-            body,
-            icon: 'https://cdn-icons-png.flaticon.com/512/564/564429.png'
-        });
-    }
-}
+let accBase = 0;
+let accStartTime = null;
 
 // =====================
 // Background
@@ -278,7 +329,6 @@ if (savedBg) document.body.style.backgroundImage = `url(${savedBg})`;
 // Accumulated time helpers
 // =====================
 function getAcc() {
-    // 現在の累積秒数を返す
     if (run && mode === 'f' && accStartTime !== null) {
         return accBase + Math.floor((Date.now() - accStartTime) / 1000);
     }
@@ -292,7 +342,22 @@ function updateUI() {
     const m = Math.floor(remain / 60), s = remain % 60;
     document.getElementById('timer').textContent =
         `${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`;
-    document.getElementById('acc-time').textContent = Math.floor(getAcc() / 60);
+
+    const accMins = Math.floor(getAcc() / 60);
+    document.getElementById('acc-time').textContent = accMins;
+
+    // 休憩中でも累積時間を保持していることを示す
+    const sessEl = document.getElementById('acc-sessions');
+    if (mode === 'r') {
+        sessEl.textContent = '休憩中（集中時間は保持中）';
+        sessEl.style.color = 'var(--accent-rest)';
+    } else if (run) {
+        sessEl.textContent = '計測中…';
+        sessEl.style.color = 'var(--text-s)';
+    } else {
+        sessEl.textContent = accMins > 0 ? 'いつでも保存可' : '';
+        sessEl.style.color = 'var(--text-s)';
+    }
 
     const badge = document.getElementById('m-label');
     if (mode === 'f') { badge.textContent = "集中モード"; badge.className = "mode-badge"; }
@@ -300,11 +365,26 @@ function updateUI() {
 }
 
 // =====================
-// Web Worker Timer
+// Inline Web Worker（timer-worker.js不要）
 // =====================
+function createWorker() {
+    const code = `
+        let iv = null;
+        self.onmessage = function(e) {
+            if (e.data === 'start') {
+                if (iv) clearInterval(iv);
+                iv = setInterval(() => self.postMessage('tick'), 1000);
+            } else if (e.data === 'stop') {
+                clearInterval(iv); iv = null;
+            }
+        };
+    `;
+    return new Worker(URL.createObjectURL(new Blob([code], { type: 'application/javascript' })));
+}
+
 function startWorker() {
     if (!worker) {
-        worker = new Worker('./timer-worker.js');
+        worker = createWorker();
         worker.onmessage = () => tick();
     }
     worker.postMessage('start');
@@ -314,7 +394,7 @@ function stopWorker() {
 }
 
 // =====================
-// Tick (called by worker every second)
+// Tick（Web Workerから毎秒呼ばれる）
 // =====================
 function tick() {
     if (!run) return;
@@ -326,20 +406,20 @@ function tick() {
         run = false;
 
         if (mode === 'f') {
-            // 集中セッション終了
+            // 集中時間をaccBaseに積み上げ（リセットしない）
             accBase = getAcc();
             accStartTime = null;
             sendNotification('⏰ 集中タイム終了！', '休憩を取りましょう。お疲れさまでした！', 'focus-end');
             mode = 'r';
             remain = 5 * 60;
         } else {
-            // 休憩終了
             sendNotification('✅ 休憩終了！', '次のセッションを始めましょう！', 'rest-end');
             mode = 'f';
             remain = 25 * 60;
+            // accBaseはそのまま保持（累積継続）
         }
-        // 自動で次のタイマーをスタート
-        toggleT();
+        // ビープ音と重ならないよう少し遅らせてから次タイマー開始
+        setTimeout(() => toggleT(), 600);
     }
 }
 
@@ -347,7 +427,7 @@ function tick() {
 // Timer Controls
 // =====================
 function toggleT() {
-    initAudio(); // ユーザー操作でAudioContextを解放
+    initAudio(); // ユーザー操作でAudioContext解放（重要）
     if (!run) {
         run = true;
         targetTime = Date.now() + remain * 1000;
@@ -356,7 +436,8 @@ function toggleT() {
         startWorker();
     } else {
         stopWorker();
-        if (mode === 'f') { accBase = getAcc(); accStartTime = null; }
+        // 集中中に停止した場合は現在の累積をaccBaseに保存（リセットしない）
+        if (mode === 'f' && accStartTime !== null) { accBase = getAcc(); accStartTime = null; }
         remain = Math.max(0, Math.round((targetTime - Date.now()) / 1000));
         run = false;
         document.getElementById('sbtn').textContent = "スタート";
@@ -380,7 +461,6 @@ function adjT(s) {
     updateUI();
 }
 
-// バックグラウンドから戻った時に時間を再計算
 document.addEventListener('visibilitychange', () => {
     if (!document.hidden && run) {
         remain = Math.max(0, Math.round((targetTime - Date.now()) / 1000));
@@ -419,15 +499,9 @@ function saveLog() {
     logs.unshift({ b: selB, p: selP, t: mins, d: today });
     localStorage.setItem('st_log_piano_v2', JSON.stringify(logs));
 
-    // ★修正: 累積をゼロにせず、「今まさに走っている分」を基準点にリセット
-    // つまり保存後も引き続き走っているタイマーはゼロから再カウント
-    if (run && mode === 'f') {
-        accBase = 0;
-        accStartTime = Date.now(); // 今この瞬間から再カウント
-    } else {
-        accBase = 0;
-        accStartTime = null;
-    }
+    // 保存後に累積をリセット。走っていれば今この瞬間から再カウント開始
+    accBase = 0;
+    accStartTime = (run && mode === 'f') ? Date.now() : null;
 
     updateUI();
     renderLogs();
@@ -439,17 +513,11 @@ function saveLog() {
 // Config Save
 // =====================
 function saveCfg() {
-    const newExam  = document.getElementById('cfg-exam').value.trim();
-    const newDate  = document.getElementById('cfg-date').value;
-
-    // 試験名・日付は入力がある場合のみ更新
+    const newExam = document.getElementById('cfg-exam').value.trim();
+    const newDate = document.getElementById('cfg-date').value;
     if (newExam) cfg.exam = newExam;
     if (newDate) cfg.date = newDate;
-
-    // books / places は設定パネル上のチップが正（addTag/removeTagで管理済み）
-    // cfg.books, cfg.places は既にリアルタイムで更新されているのでそのまま保存
     localStorage.setItem('st_cfg_piano_v2', JSON.stringify(cfg));
-
     document.getElementById('display-exam-name').textContent = cfg.exam;
     renderOpt();
     renderLogs();
@@ -459,17 +527,15 @@ function saveCfg() {
 }
 
 // =====================
-// Tag Management（参考書・場所の個別追加・削除）
+// Tag Management
 // =====================
 function addTag(type) {
     const inputId = type === 'book' ? 'cfg-book-input' : 'cfg-place-input';
     const val = document.getElementById(inputId).value.trim();
     if (!val) return;
-
     const arr = type === 'book' ? cfg.books : cfg.places;
     if (!arr.includes(val)) {
         arr.push(val);
-        // cfgを即時保存してデータを守る
         localStorage.setItem('st_cfg_piano_v2', JSON.stringify(cfg));
     }
     document.getElementById(inputId).value = '';
@@ -477,23 +543,17 @@ function addTag(type) {
 }
 
 function removeTag(type, val) {
-    if (type === 'book') {
-        cfg.books = cfg.books.filter(b => b !== val);
-    } else {
-        cfg.places = cfg.places.filter(p => p !== val);
-    }
+    if (type === 'book') cfg.books = cfg.books.filter(b => b !== val);
+    else cfg.places = cfg.places.filter(p => p !== val);
     localStorage.setItem('st_cfg_piano_v2', JSON.stringify(cfg));
     renderCfgChips();
 }
 
 function renderCfgChips() {
-    const bookEl  = document.getElementById('cfg-book-chips');
-    const placeEl = document.getElementById('cfg-place-chips');
-
-    bookEl.innerHTML = cfg.books.map(b =>
+    document.getElementById('cfg-book-chips').innerHTML = cfg.books.map(b =>
         `<div class="tag-chip">${b}<span class="tag-chip-del" onclick="removeTag('book','${b}')">×</span></div>`
     ).join('');
-    placeEl.innerHTML = cfg.places.map(p =>
+    document.getElementById('cfg-place-chips').innerHTML = cfg.places.map(p =>
         `<div class="tag-chip">${p}<span class="tag-chip-del" onclick="removeTag('place','${p}')">×</span></div>`
     ).join('');
 }
@@ -521,8 +581,14 @@ function delRes(index) {
 }
 function playRes(r) {
     initAudio();
-    if (r.u.includes('youtube.com') || r.u.includes('youtu.be')) {
-        window.open(r.u, 'studyPlayer', 'width=800,height=600');
+    if (r.u.includes('youtube.com') || r.u.includes('youtu.be') || r.u.includes('music.youtube.com')) {
+        // 画面左下に最小サイズで表示
+        const sw = window.screen.width;
+        const sh = window.screen.height;
+        const w = 320, h = 240;
+        const left = 0;
+        const top = sh - h;
+        window.open(r.u, 'ytPlayer', `width=${w},height=${h},left=${left},top=${top},resizable=yes,scrollbars=no,toolbar=no,menubar=no,location=no,status=no`);
     } else {
         document.getElementById('audio-area').style.display = 'block';
         document.getElementById('audio-title').textContent = "再生中: " + r.n;
@@ -531,8 +597,7 @@ function playRes(r) {
     }
 }
 function closeAudio() {
-    const ad = document.getElementById('main-audio');
-    ad.pause();
+    document.getElementById('main-audio').pause();
     document.getElementById('audio-area').style.display = 'none';
 }
 function renderRes() {
@@ -608,14 +673,13 @@ function updateChart() {
 }
 
 // =====================
-// Settings Panel Toggle
+// Settings Panel
 // =====================
 function toggleSettings() {
     const s = document.getElementById('settings-panel');
     const isHidden = s.style.display === 'none' || s.style.display === '';
     s.style.display = isHidden ? 'block' : 'none';
     if (isHidden) {
-        // パネルを開いた時に現在の設定をプレビュー表示
         document.getElementById('cfg-exam').value = '';
         document.getElementById('cfg-exam').placeholder = cfg.exam;
         document.getElementById('cfg-date').value = cfg.date;
