@@ -296,19 +296,35 @@ let targetTime = null;
 let worker = null;
 
 // =====================
-// 累計集中時間
-// accTotal: 保存前の累計集中秒数（休憩中も保持、保存時のみリセット）
-// focusStart: 現在の集中モード開始時刻（集中中のみnon-null）
+// 累計集中時間（区間リスト方式）
+// focusIntervals: [{start:ms, end:ms|null}] で集中区間を記録
+//   end===null = 現在進行中
+// 毎回 reduce で合計計算 → 停止・再開・休憩でズレが起きない
 // =====================
-let accTotal = 0;
-let focusStart = null;
+let focusIntervals = [];
 
-// 現時点の累計秒数を返す（集中中ならリアルタイム加算）
 function getAcc() {
-    if (run && mode === 'f' && focusStart !== null) {
-        return accTotal + Math.floor((Date.now() - focusStart) / 1000);
+    const now = Date.now();
+    return Math.floor(
+        focusIntervals.reduce((sum, iv) => {
+            return sum + Math.max(0, (iv.end !== null ? iv.end : now) - iv.start);
+        }, 0) / 1000
+    );
+}
+function focusBegin() {
+    // 進行中の区間がなければ新規追加
+    const last = focusIntervals[focusIntervals.length - 1];
+    if (!last || last.end !== null) {
+        focusIntervals.push({ start: Date.now(), end: null });
     }
-    return accTotal;
+}
+function focusEnd() {
+    const last = focusIntervals[focusIntervals.length - 1];
+    if (last && last.end === null) last.end = Date.now();
+}
+function focusReset() {
+    focusIntervals = [];
+    if (run && mode === 'f') focusBegin();
 }
 
 // =====================
@@ -399,14 +415,13 @@ function tick() {
         run = false;
 
         if (mode === 'f') {
-            // ★集中終了: 今セッション分をaccTotalに積み上げ、focusStartをリセット
-            accTotal = getAcc();
-            focusStart = null;
+            // 集中終了: 区間を閉じる（accは保持、リセットしない）
+            focusEnd();
             sendNotification('⏰ 集中タイム終了！', '休憩を取りましょう。', 'focus-end');
             mode = 'r';
             remain = 5 * 60;
         } else {
-            // ★休憩終了: accTotalはそのまま保持（リセットしない）
+            // 休憩終了: accはそのまま（次の集中でfocusBeginする）
             sendNotification('✅ 休憩終了！', '次のセッションを始めましょう！', 'rest-end');
             mode = 'f';
             remain = 25 * 60;
@@ -423,17 +438,14 @@ function toggleT() {
     if (!run) {
         run = true;
         targetTime = Date.now() + remain * 1000;
-        // 集中モードでスタートするときだけfocusStartをセット
-        if (mode === 'f') focusStart = Date.now();
+        // 集中モードなら区間開始を記録
+        if (mode === 'f') focusBegin();
         document.getElementById('sbtn').textContent = "ストップ";
         startWorker();
     } else {
         stopWorker();
-        // 集中中に手動停止: accTotalに積み上げてfocusStartをクリア
-        if (mode === 'f' && focusStart !== null) {
-            accTotal = getAcc();
-            focusStart = null;
-        }
+        // 集中中に手動停止: 区間を閉じる（数値は保持）
+        if (mode === 'f') focusEnd();
         remain = Math.max(0, Math.round((targetTime - Date.now()) / 1000));
         run = false;
         document.getElementById('sbtn').textContent = "スタート";
@@ -445,7 +457,7 @@ function fReset() {
     if (confirm("タイマーと累計時間をリセットしますか？\n（保存済みのログは消えません）")) {
         stopWorker();
         run = false; mode = 'f'; remain = 25 * 60;
-        accTotal = 0; focusStart = null; targetTime = null;
+        focusIntervals = []; targetTime = null;
         document.getElementById('sbtn').textContent = "スタート";
         updateUI();
     }
@@ -495,9 +507,8 @@ function saveLog() {
     logs.unshift({ b: selB, p: selP, t: mins, d: today });
     localStorage.setItem('st_log_piano_v2', JSON.stringify(logs));
 
-    // ★保存後にのみリセット。走っていれば今この瞬間から再カウント
-    accTotal = 0;
-    focusStart = (run && mode === 'f') ? Date.now() : null;
+    // 保存後にのみリセット。走っていれば即新区間開始
+    focusReset();
 
     updateUI();
     renderLogs();
