@@ -55,6 +55,7 @@ struct SettingsView: View {
 
                 Section {
                     Toggle("タイマー中は画面を消さない", isOn: $settings.keepScreenOn)
+                    Toggle("写真をモノクロで表示する", isOn: $settings.monoPhotos)
                 } header: {
                     Text("画面")
                 }
@@ -66,7 +67,7 @@ struct SettingsView: View {
                     Button("完了") { dismiss() }
                 }
             }
-            .tint(p.gold)
+            .tint(p.accent)
         }
         .fileImporter(isPresented: $showImporter, allowedContentTypes: [.audio]) { result in
             if case .success(let url) = result { audio.importFile(from: url) }
