@@ -4,6 +4,9 @@ import UniformTypeIdentifiers
 struct SettingsView: View {
     @EnvironmentObject private var settings: StudySettings
     @EnvironmentObject private var audio: AudioManager
+    @EnvironmentObject private var logs: LogStore
+    @State private var newBook = ""
+    @State private var newPlace = ""
     @Environment(\.dismiss) private var dismiss
     @Environment(\.colorScheme) private var scheme
     @State private var showImporter = false
@@ -12,6 +15,39 @@ struct SettingsView: View {
         let p = Palette.of(scheme)
         NavigationStack {
             Form {
+                Section("試験") {
+                    TextField("試験名", text: $logs.examName)
+                    DatePicker("試験日", selection: $logs.examDate, displayedComponents: .date)
+                }
+
+                Section {
+                    ForEach(logs.books, id: \.self) { Text($0) }
+                        .onDelete { logs.removeBooks(at: $0) }
+                    HStack {
+                        TextField("参考書を追加", text: $newBook)
+                            .onSubmit(addBook)
+                        Button("追加", action: addBook)
+                            .disabled(newBook.trimmingCharacters(in: .whitespaces).isEmpty)
+                    }
+                } header: {
+                    Text("参考書")
+                } footer: {
+                    Text("左にスワイプで削除できます。")
+                }
+
+                Section {
+                    ForEach(logs.places, id: \.self) { Text($0) }
+                        .onDelete { logs.removePlaces(at: $0) }
+                    HStack {
+                        TextField("場所を追加", text: $newPlace)
+                            .onSubmit(addPlace)
+                        Button("追加", action: addPlace)
+                            .disabled(newPlace.trimmingCharacters(in: .whitespaces).isEmpty)
+                    }
+                } header: {
+                    Text("場所")
+                }
+
                 Section {
                     Stepper("集中 \(settings.focusMinutes) 分", value: $settings.focusMinutes, in: 5...120, step: 5)
                     Stepper("休憩 \(settings.shortBreakMinutes) 分", value: $settings.shortBreakMinutes, in: 1...30)
@@ -72,5 +108,15 @@ struct SettingsView: View {
         .fileImporter(isPresented: $showImporter, allowedContentTypes: [.audio]) { result in
             if case .success(let url) = result { audio.importFile(from: url) }
         }
+    }
+
+    private func addBook() {
+        logs.addBook(newBook)
+        newBook = ""
+    }
+
+    private func addPlace() {
+        logs.addPlace(newPlace)
+        newPlace = ""
     }
 }

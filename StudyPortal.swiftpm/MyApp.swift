@@ -10,6 +10,7 @@ struct MyApp: App {
                 .environmentObject(model.settings)
                 .environmentObject(model.audio)
                 .environmentObject(model.timer)
+                .environmentObject(model.logs)
         }
     }
 }

@@ -30,10 +30,18 @@ final class StudyTimer: ObservableObject {
     private var endDate: Date?
     private var ticker: Timer?
 
+    /// 集中を記録するときに呼ばれる（記録する時刻, 秒数）
+    var onRecord: ((Date, Int) -> Void)?
+    /// 今の区切りの長さ（始まったときの設定）
+    private var phaseTotal: TimeInterval = 25 * 60
+    /// 今の集中の区切りのうち、もう記録した秒数
+    private var savedInPhase: TimeInterval = 0
+
     init(settings: StudySettings, audio: AudioManager) {
         self.settings = settings
         self.audio = audio
         remaining = duration(of: .focus)
+        phaseTotal = remaining
         todayCount = TodayCounter.load()
     }
 
@@ -52,6 +60,22 @@ final class StudyTimer: ObservableObject {
     }
 
     var hasStarted: Bool { isRunning || remaining < duration(of: phase) - 0.5 }
+
+    /// 今の集中のうち、まだ記録していない秒数
+    var unsavedSeconds: TimeInterval {
+        guard phase == .focus else { return 0 }
+        return max(0, phaseTotal - remaining - savedInPhase)
+    }
+
+    /// 途中までの集中を記録する。1分未満のときは記録しない
+    @discardableResult
+    func saveNow() -> Bool {
+        let s = unsavedSeconds
+        guard s >= 60 else { return false }
+        onRecord?(Date(), Int(s))
+        savedInPhase += s
+        return true
+    }
 
     // MARK: - 操作
 
@@ -86,13 +110,19 @@ final class StudyTimer: ObservableObject {
         phase = .focus
         completedInCycle = 0
         remaining = duration(of: .focus)
+        phaseTotal = remaining
+        savedInPhase = 0
         audio.update(for: phase, running: false)
         StudyNotifications.cancelAll()
     }
 
-    /// 今の区切りを飛ばす。飛ばした集中は回数に数えない
+    /// 今の区切りを飛ばす。飛ばした集中は回数に数えないが、勉強した分は記録する
     func skip() {
         let wasRunning = isRunning
+        if phase == .focus {
+            if let end = endDate { remaining = max(0, end.timeIntervalSinceNow) }
+            saveNow()
+        }
         if phase == .focus {
             phase = .shortBreak
         } else {
@@ -101,6 +131,8 @@ final class StudyTimer: ObservableObject {
             completedInCycle = n.completed
         }
         remaining = duration(of: phase)
+        phaseTotal = remaining
+        savedInPhase = 0
         if wasRunning {
             endDate = Date().addingTimeInterval(remaining)
             rescheduleNotifications()
@@ -113,7 +145,11 @@ final class StudyTimer: ObservableObject {
         if isRunning {
             rescheduleNotifications()
         } else {
+            // 止めている間に時間を変えたら、それまでの集中を記録してから区切りを最初に戻す
+            saveNow()
+            savedInPhase = 0
             remaining = duration(of: phase)
+            phaseTotal = remaining
         }
     }
 
@@ -130,10 +166,16 @@ final class StudyTimer: ObservableObject {
         let now = Date()
         var steps = 0
         while end <= now {
-            if phase == .focus { todayCount = TodayCounter.increment() }
+            if phase == .focus {
+                todayCount = TodayCounter.increment()
+                let s = phaseTotal - savedInPhase
+                if s >= 60 { onRecord?(end, Int(s)) }
+            }
             let n = next(after: phase, completed: completedInCycle)
             phase = n.phase
             completedInCycle = n.completed
+            phaseTotal = duration(of: phase)
+            savedInPhase = 0
             steps += 1
             // 自動開始しない設定か、長く離れていたときは新しい区切りの頭で止める
             if !settings.autoStartNext || steps >= 8 {

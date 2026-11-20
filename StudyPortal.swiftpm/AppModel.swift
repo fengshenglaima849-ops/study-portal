@@ -6,6 +6,7 @@ final class AppModel: ObservableObject {
     let settings: StudySettings
     let audio: AudioManager
     let timer: StudyTimer
+    let logs: LogStore
 
     init() {
         let s = StudySettings()
@@ -13,6 +14,9 @@ final class AppModel: ObservableObject {
         let t = StudyTimer(settings: s, audio: a)
         s.onTimingChange = { [weak t] in t?.settingsChanged() }
         s.onSoundChange = { [weak a] in a?.apply() }
+        let l = LogStore()
+        t.onRecord = { [weak l] date, seconds in l?.add(date: date, seconds: seconds) }
+        logs = l
         settings = s
         audio = a
         timer = t

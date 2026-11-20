@@ -6,9 +6,12 @@ struct ContentView: View {
     @EnvironmentObject private var timer: StudyTimer
     @EnvironmentObject private var settings: StudySettings
     @EnvironmentObject private var audio: AudioManager
+    @EnvironmentObject private var logs: LogStore
     @Environment(\.colorScheme) private var scheme
     @Environment(\.scenePhase) private var scenePhase
     @State private var showSettings = false
+    @State private var showHistory = false
+    @State private var savedFlash = false
     @State private var showImporter = false
     @State private var squarePhoto: UIImage? = PhotoStorage.load(.square)
     @State private var widePhoto: UIImage? = PhotoStorage.load(.wide)
@@ -51,6 +54,11 @@ struct ContentView: View {
             SettingsView()
                 .environmentObject(settings)
                 .environmentObject(audio)
+                .environmentObject(logs)
+        }
+        .sheet(isPresented: $showHistory) {
+            HistoryView()
+                .environmentObject(logs)
         }
         .fileImporter(isPresented: $showImporter, allowedContentTypes: [.audio]) { result in
             if case .success(let url) = result { audio.importFile(from: url) }
@@ -123,6 +131,7 @@ struct ContentView: View {
                 appIcon("スキップ", symbol: "forward.end.fill", size: unit, dark: false, p: p) { timer.skip() }
                 appIcon("設定", symbol: "slider.horizontal.3", size: unit, dark: false, p: p) { showSettings = true }
             }
+            logWidget(p, width: width)
             HStack(alignment: .top, spacing: gap) {
                 ForEach([SoundKind.rain, .white, .brown, .lofi]) { kind in
                     soundIcon(kind, size: unit, p: p)
@@ -137,9 +146,189 @@ struct ContentView: View {
                     .font(.footnote)
                     .foregroundStyle(.red)
             }
+            HStack(spacing: gap) {
+                countdownWidget(p, size: big)
+                chartWidget(p, size: big)
+            }
+            totalsWidget(p, size: CGSize(width: width, height: max(64, unit * 0.6)))
             dateWidget(p, size: CGSize(width: width, height: big))
         }
         .frame(width: width)
+    }
+
+    // MARK: - 記録
+
+    /// 参考書と場所を選び、途中までの集中を保存する
+    private func logWidget(_ p: Palette, width: CGFloat) -> some View {
+        let unsaved = Int(timer.unsavedSeconds / 60)
+        let canSave = timer.unsavedSeconds >= 60
+        return VStack(alignment: .leading, spacing: 16) {
+            tagRow("参考書", items: logs.books, selected: logs.selectedBook, p: p) { logs.selectedBook = $0 }
+            tagRow("場所", items: logs.places, selected: logs.selectedPlace, p: p) { logs.selectedPlace = $0 }
+            HStack(spacing: 12) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("未保存 \(unsaved) 分")
+                        .font(.serif(17))
+                        .monospacedDigit()
+                        .foregroundStyle(p.text)
+                    Text("集中が終わるたびに自動で記録します")
+                        .font(.serif(12, .medium))
+                        .foregroundStyle(p.subtext)
+                }
+                Spacer()
+                Button {
+                    if timer.saveNow() { flashSaved() }
+                } label: {
+                    Text(savedFlash ? "保存しました" : "保存")
+                        .font(.serif(16))
+                        .foregroundStyle(p.onDark)
+                        .padding(.horizontal, 24)
+                        .frame(height: 46)
+                        .background(Capsule().fill(p.tileDark))
+                }
+                .buttonStyle(PressableStyle())
+                .disabled(!canSave)
+                .opacity(canSave || savedFlash ? 1 : 0.35)
+            }
+        }
+        .padding(20)
+        .frame(width: width, alignment: .leading)
+        .background(RoundedRectangle(cornerRadius: 28, style: .continuous).fill(p.tileLight))
+    }
+
+    private func tagRow(_ title: String, items: [String], selected: String, p: Palette,
+                        select: @escaping (String) -> Void) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(title)
+                .font(.serif(13, .semibold))
+                .tracking(2)
+                .foregroundStyle(p.subtext)
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 8) {
+                    if items.isEmpty {
+                        Text("設定から追加できます")
+                            .font(.serif(14, .medium))
+                            .foregroundStyle(p.subtext)
+                    }
+                    ForEach(items, id: \.self) { item in
+                        let on = item == selected
+                        Button { select(on ? "" : item) } label: {
+                            Text(item)
+                                .font(.serif(15, .semibold))
+                                .foregroundStyle(on ? p.onDark : p.text)
+                                .padding(.horizontal, 16)
+                                .frame(height: 40)
+                                .background(Capsule().fill(on ? p.tileDark : p.base.opacity(0.55)))
+                        }
+                        .buttonStyle(PressableStyle())
+                        .accessibilityAddTraits(on ? .isSelected : [])
+                    }
+                }
+            }
+        }
+    }
+
+    /// 試験までの日数
+    private func countdownWidget(_ p: Palette, size: CGFloat) -> some View {
+        Button { showSettings = true } label: {
+            VStack(spacing: 6) {
+                Text("D-\(logs.daysLeft)")
+                    .font(.serif(size * 0.26))
+                    .monospacedDigit()
+                    .foregroundStyle(p.text)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.5)
+                Text(logs.examName)
+                    .font(.serif(16, .semibold))
+                    .foregroundStyle(p.text)
+                    .lineLimit(1)
+                Text(english("MMM d, yyyy", logs.examDate))
+                    .font(.serif(13, .medium))
+                    .foregroundStyle(p.subtext)
+            }
+            .padding(16)
+            .frame(width: size, height: size)
+            .background(RoundedRectangle(cornerRadius: 28, style: .continuous).fill(p.tileLight))
+        }
+        .buttonStyle(PressableStyle())
+    }
+
+    /// 過去7日間の勉強時間
+    private func chartWidget(_ p: Palette, size: CGFloat) -> some View {
+        let days = logs.lastSevenDays()
+        let top = max(60, days.map { $0.seconds }.max() ?? 0)
+        let week = days.reduce(0) { $0 + $1.seconds }
+        return Button { showHistory = true } label: {
+            VStack(alignment: .leading, spacing: 10) {
+                HStack {
+                    Text("7 DAYS")
+                        .tracking(2)
+                    Spacer()
+                    Text(LogStore.format(week))
+                        .monospacedDigit()
+                }
+                .font(.serif(13, .semibold))
+                .foregroundStyle(p.subtext)
+                HStack(alignment: .bottom, spacing: 6) {
+                    ForEach(days) { d in
+                        VStack(spacing: 6) {
+                            GeometryReader { g in
+                                VStack(spacing: 0) {
+                                    Spacer(minLength: 0)
+                                    Capsule()
+                                        .fill(d.seconds > 0 ? p.text : p.text.opacity(0.15))
+                                        .frame(height: max(4, g.size.height * CGFloat(d.seconds) / CGFloat(top)))
+                                }
+                            }
+                            Text(english("d", d.day))
+                                .font(.serif(11, .semibold))
+                                .monospacedDigit()
+                                .foregroundStyle(p.subtext)
+                        }
+                        .frame(maxWidth: .infinity)
+                    }
+                }
+            }
+            .padding(18)
+            .frame(width: size, height: size)
+            .background(RoundedRectangle(cornerRadius: 28, style: .continuous).fill(p.tileLight))
+        }
+        .buttonStyle(PressableStyle())
+        .accessibilityLabel("過去7日間 \(LogStore.format(week))")
+    }
+
+    /// これまでの合計。タップで履歴へ
+    private func totalsWidget(_ p: Palette, size: CGSize) -> some View {
+        Button { showHistory = true } label: {
+            HStack(spacing: 18) {
+                Text("TOTAL")
+                    .font(.serif(13, .semibold))
+                    .tracking(2)
+                    .foregroundStyle(p.subtext)
+                Text("\(logs.logs.count) 回")
+                    .font(.serif(20))
+                Text(LogStore.format(logs.totalSeconds))
+                    .font(.serif(20))
+                Spacer()
+                Text("履歴")
+                    .font(.serif(15, .semibold))
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 13, weight: .semibold))
+            }
+            .monospacedDigit()
+            .foregroundStyle(p.text)
+            .lineLimit(1)
+            .minimumScaleFactor(0.7)
+            .padding(.horizontal, 22)
+            .frame(width: size.width, height: size.height)
+            .background(RoundedRectangle(cornerRadius: size.height * 0.35, style: .continuous).fill(p.tileLight))
+        }
+        .buttonStyle(PressableStyle())
+    }
+
+    private func flashSaved() {
+        savedFlash = true
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.8) { savedFlash = false }
     }
 
     /// 今の時刻を「時」と「分」の2段で
