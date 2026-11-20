@@ -5,8 +5,10 @@ struct SettingsView: View {
     @EnvironmentObject private var settings: StudySettings
     @EnvironmentObject private var audio: AudioManager
     @EnvironmentObject private var logs: LogStore
-    @State private var newBook = ""
-    @State private var newPlace = ""
+    /// 文字入力は、確実にキーボードが出る入力ダイアログで行う
+    @State private var input: InputKind?
+    @State private var showInput = false
+    @State private var draft = ""
     @Environment(\.dismiss) private var dismiss
     @Environment(\.colorScheme) private var scheme
 
@@ -15,20 +17,31 @@ struct SettingsView: View {
         NavigationStack {
             Form {
                 Section("試験") {
-                    TextField("試験名", text: $logs.examName)
-                        .submitLabel(.done)
+                    Button {
+                        draft = logs.examName
+                        input = .exam
+                        showInput = true
+                    } label: {
+                        HStack {
+                            Text("試験名")
+                                .foregroundStyle(.primary)
+                            Spacer()
+                            Text(logs.examName)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
                     DatePicker("試験日", selection: $logs.examDate, displayedComponents: .date)
                 }
 
                 Section {
                     ForEach(logs.books, id: \.self) { Text($0) }
                         .onDelete { logs.removeBooks(at: $0) }
-                    HStack {
-                        TextField("参考書を追加", text: $newBook)
-                            .onSubmit(addBook)
-                        Button("追加", action: addBook)
-                            .buttonStyle(.borderless)
-                            .disabled(newBook.trimmingCharacters(in: .whitespaces).isEmpty)
+                    Button {
+                        draft = ""
+                        input = .book
+                        showInput = true
+                    } label: {
+                        Label("参考書を追加", systemImage: "plus")
                     }
                 } header: {
                     Text("参考書")
@@ -39,12 +52,12 @@ struct SettingsView: View {
                 Section {
                     ForEach(logs.places, id: \.self) { Text($0) }
                         .onDelete { logs.removePlaces(at: $0) }
-                    HStack {
-                        TextField("場所を追加", text: $newPlace)
-                            .onSubmit(addPlace)
-                        Button("追加", action: addPlace)
-                            .buttonStyle(.borderless)
-                            .disabled(newPlace.trimmingCharacters(in: .whitespaces).isEmpty)
+                    Button {
+                        draft = ""
+                        input = .place
+                        showInput = true
+                    } label: {
+                        Label("場所を追加", systemImage: "plus")
                     }
                 } header: {
                     Text("場所")
@@ -75,7 +88,6 @@ struct SettingsView: View {
 
                 Section {
                     Toggle("タイマー中は画面を消さない", isOn: $settings.keepScreenOn)
-                    Toggle("写真をモノクロで表示する", isOn: $settings.monoPhotos)
                 } header: {
                     Text("画面")
                 }
@@ -88,16 +100,46 @@ struct SettingsView: View {
                 }
             }
             .tint(p.accent)
+            .alert(input?.title ?? "", isPresented: $showInput) {
+                TextField(input?.placeholder ?? "", text: $draft)
+                Button("キャンセル", role: .cancel) { }
+                Button("OK") { commit() }
+            }
         }
     }
 
-    private func addBook() {
-        logs.addBook(newBook)
-        newBook = ""
+    private func commit() {
+        let text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
+        switch input {
+        case .exam:
+            if !text.isEmpty { logs.examName = text }
+        case .book:
+            logs.addBook(text)
+        case .place:
+            logs.addPlace(text)
+        case nil:
+            break
+        }
+        draft = ""
+    }
+}
+
+enum InputKind {
+    case exam, book, place
+
+    var title: String {
+        switch self {
+        case .exam: return "試験名"
+        case .book: return "参考書を追加"
+        case .place: return "場所を追加"
+        }
     }
 
-    private func addPlace() {
-        logs.addPlace(newPlace)
-        newPlace = ""
+    var placeholder: String {
+        switch self {
+        case .exam: return "例：基本情報技術者試験"
+        case .book: return "例：Chapter 9"
+        case .place: return "例：図書館"
+        }
     }
 }

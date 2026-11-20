@@ -1,12 +1,13 @@
 import AVFoundation
 
 enum SoundKind: String, CaseIterable, Identifiable {
-    case rain, white, brown, lofi
+    case off, rain, white, brown, lofi
 
     var id: String { rawValue }
 
     var title: String {
         switch self {
+        case .off: return "なし"
         case .rain: return "雨音"
         case .white: return "ホワイト"
         case .brown: return "ブラウン"
@@ -16,6 +17,7 @@ enum SoundKind: String, CaseIterable, Identifiable {
 
     var symbol: String {
         switch self {
+        case .off: return "speaker.slash"
         case .rain: return "cloud.rain"
         case .white: return "waveform"
         case .brown: return "water.waves"
@@ -54,7 +56,7 @@ final class AudioManager: ObservableObject {
     /// 今の状態と設定に合わせて音量を決め直す
     func apply() {
         let level: Float
-        if !running {
+        if !running || settings.sound == .off {
             level = 0
         } else if phase.isBreak && !settings.bgmDuringBreak {
             // 休憩中もごく小さく鳴らし続けると、裏にいる間もアプリが止まりにくい
@@ -80,13 +82,16 @@ final class AudioManager: ObservableObject {
 
     private func configureSession() {
         do {
-            try AVAudioSession.sharedInstance().setCategory(.playback, mode: .default, options: [.mixWithOthers])
+            // ambient: Spotify や YouTube など、ほかのアプリの音を止めずに重ねて鳴らす
+            try AVAudioSession.sharedInstance().setCategory(.ambient, mode: .default, options: [.mixWithOthers])
         } catch {
             print("audio session error: \(error)")
         }
     }
 
     private func activateSession() {
+        // Playgrounds 本体が設定を変えていることがあるので、鳴らす直前に毎回設定し直す
+        configureSession()
         try? AVAudioSession.sharedInstance().setActive(true)
     }
 

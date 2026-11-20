@@ -1,5 +1,4 @@
 import SwiftUI
-import PhotosUI
 
 struct ContentView: View {
     @EnvironmentObject private var timer: StudyTimer
@@ -11,12 +10,6 @@ struct ContentView: View {
     @State private var showSettings = false
     @State private var showHistory = false
     @State private var savedFlash = false
-    @State private var heroPhoto: UIImage? = PhotoStorage.load(.hero)
-    @State private var heroItem: PhotosPickerItem?
-    @State private var squarePhoto: UIImage? = PhotoStorage.load(.square)
-    @State private var widePhoto: UIImage? = PhotoStorage.load(.wide)
-    @State private var squareItem: PhotosPickerItem?
-    @State private var wideItem: PhotosPickerItem?
 
     private let gap: CGFloat = 18
 
@@ -67,34 +60,20 @@ struct ContentView: View {
         }
         .onChange(of: timer.isRunning) { _, _ in updateIdleTimer() }
         .onChange(of: settings.keepScreenOn) { _, _ in updateIdleTimer() }
-        .onChange(of: squareItem) { _, item in loadPhoto(item, slot: .square) }
-        .onChange(of: wideItem) { _, item in loadPhoto(item, slot: .wide) }
-        .onChange(of: heroItem) { _, item in loadPhoto(item, slot: .hero) }
     }
 
-    // MARK: - 真ん中の大きなタイマー（後ろに写真を入れられる）
+    // MARK: - 真ん中の大きなタイマー
 
     private func face(_ p: Palette, size: CGSize) -> some View {
-        let hasPhoto = heroPhoto != nil
-        let ink = hasPhoto ? Color.white : p.text
+        let ink = p.text
         return ZStack {
-            if let heroPhoto {
-                Image(uiImage: heroPhoto)
-                    .resizable()
-                    .scaledToFill()
-                    .saturation(settings.monoPhotos ? 0 : 1)
-                    .frame(width: size.width, height: size.height)
-                    .clipped()
-                Color.black.opacity(0.3)
-            } else {
-                RoundedRectangle(cornerRadius: 32, style: .continuous)
-                    .fill(p.tileLight.opacity(0.55))
-            }
+            RoundedRectangle(cornerRadius: 32, style: .continuous)
+                .fill(p.tileLight.opacity(0.55))
             TimelineView(.everyMinute) { context in
                 VStack(spacing: 12) {
                     Text("\(english("EEE d", context.date))   Have a nice day")
                         .font(.serif(min(24, size.width * 0.05), .semibold))
-                        .foregroundStyle(ink.opacity(0.9))
+                        .foregroundStyle(ink.opacity(0.85))
                     Text(timeString(timer.remaining))
                         .font(.serif(min(150, size.width * 0.27)))
                         .monospacedDigit()
@@ -105,34 +84,16 @@ struct ContentView: View {
                         Text(timer.phase.title)
                             .font(.serif(18, .semibold))
                             .tracking(2)
-                            .foregroundStyle(ink.opacity(0.85))
+                            .foregroundStyle(p.subtext)
                         cycleDots(ink)
                     }
                     ProgressLine(progress: timer.progress, color: ink)
                         .frame(width: min(260, size.width * 0.6), height: 3)
                 }
-                .shadow(color: hasPhoto ? .black.opacity(0.35) : .clear, radius: 8)
                 .padding(.horizontal, 20)
             }
-            VStack {
-                Spacer()
-                HStack {
-                    Spacer()
-                    PhotosPicker(selection: $heroItem, matching: .images) {
-                        Label(hasPhoto ? "写真を変える" : "写真を入れる", systemImage: "photo")
-                            .font(.serif(14, .semibold))
-                            .foregroundStyle(ink)
-                            .padding(.horizontal, 14)
-                            .frame(height: 36)
-                            .background(Capsule().fill(.ultraThinMaterial))
-                    }
-                    .buttonStyle(PressableStyle())
-                }
-            }
-            .padding(16)
         }
         .frame(width: size.width, height: size.height)
-        .clipShape(RoundedRectangle(cornerRadius: 32, style: .continuous))
     }
 
     private func cycleDots(_ ink: Color) -> some View {
@@ -155,7 +116,7 @@ struct ContentView: View {
         return VStack(spacing: gap) {
             HStack(spacing: gap) {
                 clockWidget(p, size: big)
-                photoWidget(p, size: CGSize(width: big, height: big), image: squarePhoto, item: $squareItem)
+                todayWidget(p, size: big)
             }
             HStack(alignment: .top, spacing: gap) {
                 appIcon("リセット", symbol: "arrow.counterclockwise", size: unit, dark: false, p: p) { timer.reset() }
@@ -167,8 +128,8 @@ struct ContentView: View {
             }
             logWidget(p, width: width)
             HStack(alignment: .top, spacing: gap) {
-                ForEach([SoundKind.rain, .white, .brown, .lofi]) { kind in
-                    soundIcon(kind, size: unit, p: p)
+                ForEach(SoundKind.allCases) { kind in
+                    soundIcon(kind, size: (width - gap * 4) / 5, p: p)
                 }
             }
             volumeWidget(p, size: CGSize(width: width, height: max(64, unit * 0.6)))
@@ -372,79 +333,61 @@ struct ContentView: View {
         .accessibilityElement(children: .combine)
     }
 
-    /// タップで写真を選べるウィジェット
-    private func photoWidget(_ p: Palette, size: CGSize, image: UIImage?, item: Binding<PhotosPickerItem?>) -> some View {
-        PhotosPicker(selection: item, matching: .images) {
-            ZStack {
-                RoundedRectangle(cornerRadius: 28, style: .continuous)
-                    .fill(p.tileLight)
-                if let image {
-                    Image(uiImage: image)
-                        .resizable()
-                        .scaledToFill()
-                        .saturation(settings.monoPhotos ? 0 : 1)
-                        .frame(width: size.width, height: size.height)
-                        .clipped()
-                } else {
-                    VStack(spacing: 8) {
-                        Image(systemName: "photo")
-                            .font(.system(size: 28))
-                        Text("写真を選ぶ")
-                            .font(.serif(15, .semibold))
-                    }
-                    .foregroundStyle(p.subtext)
-                }
-            }
-            .frame(width: size.width, height: size.height)
-            .clipShape(RoundedRectangle(cornerRadius: 28, style: .continuous))
+    /// 今日の勉強時間
+    private func todayWidget(_ p: Palette, size: CGFloat) -> some View {
+        let today = logs.lastSevenDays().last?.seconds ?? 0
+        return VStack(spacing: 6) {
+            Text("TODAY")
+                .font(.serif(13, .semibold))
+                .tracking(2)
+                .foregroundStyle(p.onDark.opacity(0.7))
+            Text(LogStore.format(today))
+                .font(.serif(size * 0.17))
+                .monospacedDigit()
+                .foregroundStyle(p.onDark)
+                .lineLimit(1)
+                .minimumScaleFactor(0.5)
+            Text("集中 \(timer.todayCount) 回")
+                .font(.serif(15, .semibold))
+                .foregroundStyle(p.onDark.opacity(0.8))
         }
-        .buttonStyle(PressableStyle())
+        .padding(16)
+        .frame(width: size, height: size)
+        .background(RoundedRectangle(cornerRadius: 28, style: .continuous).fill(p.tileDark))
     }
 
-    /// 写真の上に曜日と日付を大きく
+    /// 曜日と日付を大きく
     private func dateWidget(_ p: Palette, size: CGSize) -> some View {
-        let hasPhoto = widePhoto != nil
-        let ink = hasPhoto ? Color.white : p.onDark
-        return PhotosPicker(selection: $wideItem, matching: .images) {
-            ZStack(alignment: .bottomLeading) {
-                RoundedRectangle(cornerRadius: 28, style: .continuous)
-                    .fill(p.tileDark)
-                if let widePhoto {
-                    Image(uiImage: widePhoto)
-                        .resizable()
-                        .scaledToFill()
-                        .saturation(settings.monoPhotos ? 0 : 1)
-                        .frame(width: size.width, height: size.height)
-                        .clipped()
-                    LinearGradient(colors: [.clear, .black.opacity(0.45)], startPoint: .center, endPoint: .bottom)
+        let ink = p.onDark
+        return ZStack(alignment: .bottomLeading) {
+            RoundedRectangle(cornerRadius: 28, style: .continuous)
+                .fill(p.tileDark)
+            TimelineView(.everyMinute) { context in
+                VStack(alignment: .leading, spacing: 0) {
+                    Text(english("EEEE", context.date).uppercased())
+                    Text(english("MMMM d", context.date))
                 }
-                TimelineView(.everyMinute) { context in
-                    VStack(alignment: .leading, spacing: 0) {
-                        Text(english("EEEE", context.date).uppercased())
-                        Text(english("MMMM d", context.date))
-                    }
-                    .font(.serif(size.height * 0.16))
-                    .foregroundStyle(ink)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.5)
-                    .padding(22)
-                }
-                VStack {
-                    HStack {
-                        Spacer()
-                        Text("今日 \(timer.todayCount) 回")
-                            .font(.serif(size.height * 0.11))
-                            .monospacedDigit()
-                            .foregroundStyle(ink)
-                            .padding(20)
-                    }
-                    Spacer()
-                }
+                .font(.serif(size.height * 0.16))
+                .foregroundStyle(ink)
+                .lineLimit(1)
+                .minimumScaleFactor(0.5)
+                .padding(22)
             }
-            .frame(width: size.width, height: size.height)
-            .clipShape(RoundedRectangle(cornerRadius: 28, style: .continuous))
+            VStack {
+                HStack {
+                    Spacer()
+                    TimelineView(.everyMinute) { context in
+                        Text(english("H:mm", context.date))
+                    }
+                        .font(.serif(size.height * 0.13))
+                        .monospacedDigit()
+                        .foregroundStyle(ink)
+                        .padding(20)
+                }
+                Spacer()
+            }
         }
-        .buttonStyle(PressableStyle())
+        .frame(width: size.width, height: size.height)
     }
 
     private func volumeWidget(_ p: Palette, size: CGSize) -> some View {
@@ -499,19 +442,6 @@ struct ContentView: View {
     }
 
     // MARK: - 補助
-
-    private func loadPhoto(_ item: PhotosPickerItem?, slot: PhotoSlot) {
-        guard let item else { return }
-        Task { @MainActor in
-            guard let data = try? await item.loadTransferable(type: Data.self),
-                  let image = PhotoStorage.save(data, slot: slot) else { return }
-            switch slot {
-            case .square: squarePhoto = image
-            case .wide: widePhoto = image
-            case .hero: heroPhoto = image
-            }
-        }
-    }
 
     private func english(_ format: String, _ date: Date) -> String {
         let f = DateFormatter()

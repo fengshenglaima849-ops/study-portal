@@ -42,7 +42,6 @@ final class StudySettings: ObservableObject {
     @Published var chimeOn: Bool { didSet { save(chimeOn, "chimeOn"); onSoundChange?() } }
 
     @Published var keepScreenOn: Bool { didSet { save(keepScreenOn, "keepScreenOn") } }
-    @Published var monoPhotos: Bool { didSet { save(monoPhotos, "monoPhotos") } }
 
     init() {
         let d = UserDefaults.standard
@@ -57,7 +56,6 @@ final class StudySettings: ObservableObject {
         keepAliveDuringBreak = d.object(forKey: "keepAliveDuringBreak") as? Bool ?? true
         chimeOn = d.object(forKey: "chimeOn") as? Bool ?? true
         keepScreenOn = d.object(forKey: "keepScreenOn") as? Bool ?? true
-        monoPhotos = d.object(forKey: "monoPhotos") as? Bool ?? true
     }
 
     private func save(_ value: Any?, _ key: String) {

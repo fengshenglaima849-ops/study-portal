@@ -92,6 +92,8 @@ final class SynthState: @unchecked Sendable {
             var r: Float = 0
             if gain > 0.00005 {
                 switch currentKind {
+                case .off:
+                    break
                 case .white:
                     l = noise() * 0.16
                     r = noise() * 0.16
