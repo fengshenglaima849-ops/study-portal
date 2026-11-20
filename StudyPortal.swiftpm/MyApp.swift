@@ -1,0 +1,15 @@
+import SwiftUI
+
+@main
+struct MyApp: App {
+    @StateObject private var model = AppModel()
+
+    var body: some Scene {
+        WindowGroup {
+            ContentView()
+                .environmentObject(model.settings)
+                .environmentObject(model.audio)
+                .environmentObject(model.timer)
+        }
+    }
+}
