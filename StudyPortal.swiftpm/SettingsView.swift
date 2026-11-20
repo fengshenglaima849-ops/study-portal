@@ -16,7 +16,7 @@ struct SettingsView: View {
         let p = Palette.of(scheme)
         NavigationStack {
             Form {
-                Section("試験") {
+                Section {
                     Button {
                         draft = logs.examName
                         input = .exam
@@ -30,7 +30,14 @@ struct SettingsView: View {
                                 .foregroundStyle(.secondary)
                         }
                     }
+                    pasteRow("コピーした文字を試験名にする") { lines in
+                        if let first = lines.first { logs.examName = first }
+                    }
                     DatePicker("試験日", selection: $logs.examDate, displayedComponents: .date)
+                } header: {
+                    Text("試験")
+                } footer: {
+                    Text(pasteHelp)
                 }
 
                 Section {
@@ -42,6 +49,9 @@ struct SettingsView: View {
                         showInput = true
                     } label: {
                         Label("参考書を追加", systemImage: "plus")
+                    }
+                    pasteRow("コピーした文字で参考書を追加") { lines in
+                        lines.forEach { logs.addBook($0) }
                     }
                 } header: {
                     Text("参考書")
@@ -58,6 +68,9 @@ struct SettingsView: View {
                         showInput = true
                     } label: {
                         Label("場所を追加", systemImage: "plus")
+                    }
+                    pasteRow("コピーした文字で場所を追加") { lines in
+                        lines.forEach { logs.addPlace($0) }
                     }
                 } header: {
                     Text("場所")
@@ -105,6 +118,27 @@ struct SettingsView: View {
                 Button("キャンセル", role: .cancel) { }
                 Button("OK") { commit() }
             }
+        }
+    }
+
+    private var pasteHelp: String {
+        "キーボードが出ないときは、メモなどほかのアプリで文字を打ってコピーし、「ペースト」を押してください。改行で区切ると、まとめて追加できます。"
+    }
+
+    /// クリップボードの文字を1行ずつ渡す（キーボードを使わない入力）
+    private func pasteRow(_ title: String, perform: @escaping ([String]) -> Void) -> some View {
+        HStack {
+            Text(title)
+            Spacer()
+            PasteButton(payloadType: String.self) { strings in
+                let lines = strings
+                    .flatMap { $0.components(separatedBy: .newlines) }
+                    .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+                    .filter { !$0.isEmpty }
+                Task { @MainActor in perform(lines) }
+            }
+            .labelStyle(.titleAndIcon)
+            .buttonBorderShape(.capsule)
         }
     }
 
