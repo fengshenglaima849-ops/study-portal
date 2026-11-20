@@ -86,6 +86,7 @@ final class StudyTimer: ObservableObject {
     func start() {
         guard !isRunning else { return }
         StudyNotifications.requestPermission()
+        audio.stopOtherApps()
         endDate = Date().addingTimeInterval(remaining)
         isRunning = true
         startTicker()

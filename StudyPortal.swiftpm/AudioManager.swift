@@ -72,6 +72,11 @@ final class AudioManager: ObservableObject {
         if volume > 0 { startEngine() } else { scheduleEngineStop() }
     }
 
+    /// ほかのアプリで流れている曲を止める（開始ボタンを押したとき）
+    func stopOtherApps() {
+        activateSession()
+    }
+
     func chime() {
         guard settings.chimeOn else { return }
         synth.triggerChime()
@@ -82,8 +87,8 @@ final class AudioManager: ObservableObject {
 
     private func configureSession() {
         do {
-            // ambient: Spotify や YouTube など、ほかのアプリの音を止めずに重ねて鳴らす
-            try AVAudioSession.sharedInstance().setCategory(.ambient, mode: .default, options: [.mixWithOthers])
+            // playback（重ねない）: 有効にした時点で Spotify や YouTube など、ほかのアプリの音が止まる
+            try AVAudioSession.sharedInstance().setCategory(.playback, mode: .default, options: [])
         } catch {
             print("audio session error: \(error)")
         }
