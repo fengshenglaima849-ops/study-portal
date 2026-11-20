@@ -2,7 +2,7 @@ import UIKit
 
 /// ウィジェットに飾る写真の置き場所
 enum PhotoSlot: String {
-    case square, wide
+    case square, wide, hero
 }
 
 enum PhotoStorage {

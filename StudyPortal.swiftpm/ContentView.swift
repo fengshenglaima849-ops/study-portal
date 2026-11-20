@@ -1,6 +1,5 @@
 import SwiftUI
 import PhotosUI
-import UniformTypeIdentifiers
 
 struct ContentView: View {
     @EnvironmentObject private var timer: StudyTimer
@@ -12,7 +11,8 @@ struct ContentView: View {
     @State private var showSettings = false
     @State private var showHistory = false
     @State private var savedFlash = false
-    @State private var showImporter = false
+    @State private var heroPhoto: UIImage? = PhotoStorage.load(.hero)
+    @State private var heroItem: PhotosPickerItem?
     @State private var squarePhoto: UIImage? = PhotoStorage.load(.square)
     @State private var widePhoto: UIImage? = PhotoStorage.load(.wide)
     @State private var squareItem: PhotosPickerItem?
@@ -27,8 +27,8 @@ struct ContentView: View {
             if wide {
                 let gridWidth = min(geo.size.width * 0.46, 560)
                 HStack(spacing: 32) {
-                    face(p)
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    face(p, size: CGSize(width: max(200, geo.size.width - gridWidth - 96),
+                                         height: max(200, geo.size.height - 48)))
                     ScrollView(showsIndicators: false) {
                         grid(p, width: gridWidth)
                             .padding(.vertical, 24)
@@ -39,10 +39,11 @@ struct ContentView: View {
                 .frame(width: geo.size.width, height: geo.size.height)
             } else {
                 ScrollView(showsIndicators: false) {
+                    let gridWidth = min(geo.size.width - 48, 600)
                     VStack(spacing: 36) {
-                        face(p)
-                            .padding(.top, 32)
-                        grid(p, width: min(geo.size.width - 48, 600))
+                        face(p, size: CGSize(width: gridWidth, height: gridWidth * 0.78))
+                            .padding(.top, 24)
+                        grid(p, width: gridWidth)
                     }
                     .frame(maxWidth: .infinity)
                     .padding(.bottom, 40)
@@ -60,9 +61,6 @@ struct ContentView: View {
             HistoryView()
                 .environmentObject(logs)
         }
-        .fileImporter(isPresented: $showImporter, allowedContentTypes: [.audio]) { result in
-            if case .success(let url) = result { audio.importFile(from: url) }
-        }
         .onAppear { updateIdleTimer() }
         .onChange(of: scenePhase) { _, newPhase in
             if newPhase == .active { timer.refresh() }
@@ -71,41 +69,77 @@ struct ContentView: View {
         .onChange(of: settings.keepScreenOn) { _, _ in updateIdleTimer() }
         .onChange(of: squareItem) { _, item in loadPhoto(item, slot: .square) }
         .onChange(of: wideItem) { _, item in loadPhoto(item, slot: .wide) }
+        .onChange(of: heroItem) { _, item in loadPhoto(item, slot: .hero) }
     }
 
-    // MARK: - ロック画面のような大きなタイマー
+    // MARK: - 真ん中の大きなタイマー（後ろに写真を入れられる）
 
-    private func face(_ p: Palette) -> some View {
-        TimelineView(.everyMinute) { context in
-            VStack(spacing: 12) {
-                Text("\(english("EEE d", context.date))   Have a nice day")
-                    .font(.serif(24, .semibold))
-                    .foregroundStyle(p.text.opacity(0.85))
-                Text(timeString(timer.remaining))
-                    .font(.serif(140))
-                    .monospacedDigit()
-                    .foregroundStyle(p.text)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.4)
-                HStack(spacing: 14) {
-                    Text(timer.phase.title)
-                        .font(.serif(18, .semibold))
-                        .tracking(2)
-                        .foregroundStyle(p.subtext)
-                    cycleDots(p)
-                }
-                ProgressLine(progress: timer.progress)
-                    .frame(width: 260, height: 3)
+    private func face(_ p: Palette, size: CGSize) -> some View {
+        let hasPhoto = heroPhoto != nil
+        let ink = hasPhoto ? Color.white : p.text
+        return ZStack {
+            if let heroPhoto {
+                Image(uiImage: heroPhoto)
+                    .resizable()
+                    .scaledToFill()
+                    .saturation(settings.monoPhotos ? 0 : 1)
+                    .frame(width: size.width, height: size.height)
+                    .clipped()
+                Color.black.opacity(0.3)
+            } else {
+                RoundedRectangle(cornerRadius: 32, style: .continuous)
+                    .fill(p.tileLight.opacity(0.55))
             }
-            .padding(.horizontal, 16)
+            TimelineView(.everyMinute) { context in
+                VStack(spacing: 12) {
+                    Text("\(english("EEE d", context.date))   Have a nice day")
+                        .font(.serif(min(24, size.width * 0.05), .semibold))
+                        .foregroundStyle(ink.opacity(0.9))
+                    Text(timeString(timer.remaining))
+                        .font(.serif(min(150, size.width * 0.27)))
+                        .monospacedDigit()
+                        .foregroundStyle(ink)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.4)
+                    HStack(spacing: 14) {
+                        Text(timer.phase.title)
+                            .font(.serif(18, .semibold))
+                            .tracking(2)
+                            .foregroundStyle(ink.opacity(0.85))
+                        cycleDots(ink)
+                    }
+                    ProgressLine(progress: timer.progress, color: ink)
+                        .frame(width: min(260, size.width * 0.6), height: 3)
+                }
+                .shadow(color: hasPhoto ? .black.opacity(0.35) : .clear, radius: 8)
+                .padding(.horizontal, 20)
+            }
+            VStack {
+                Spacer()
+                HStack {
+                    Spacer()
+                    PhotosPicker(selection: $heroItem, matching: .images) {
+                        Label(hasPhoto ? "写真を変える" : "写真を入れる", systemImage: "photo")
+                            .font(.serif(14, .semibold))
+                            .foregroundStyle(ink)
+                            .padding(.horizontal, 14)
+                            .frame(height: 36)
+                            .background(Capsule().fill(.ultraThinMaterial))
+                    }
+                    .buttonStyle(PressableStyle())
+                }
+            }
+            .padding(16)
         }
+        .frame(width: size.width, height: size.height)
+        .clipShape(RoundedRectangle(cornerRadius: 32, style: .continuous))
     }
 
-    private func cycleDots(_ p: Palette) -> some View {
+    private func cycleDots(_ ink: Color) -> some View {
         HStack(spacing: 8) {
             ForEach(0..<settings.sessionsBeforeLongBreak, id: \.self) { i in
                 Circle()
-                    .fill(i < timer.completedInCycle ? p.text : p.text.opacity(0.2))
+                    .fill(i < timer.completedInCycle ? ink : ink.opacity(0.25))
                     .frame(width: 8, height: 8)
             }
         }
@@ -137,15 +171,7 @@ struct ContentView: View {
                     soundIcon(kind, size: unit, p: p)
                 }
             }
-            HStack(alignment: .top, spacing: gap) {
-                soundIcon(.myFile, size: unit, p: p)
-                volumeWidget(p, size: CGSize(width: unit * 3 + gap * 2, height: unit))
-            }
-            if let error = audio.fileError {
-                Text(error)
-                    .font(.footnote)
-                    .foregroundStyle(.red)
-            }
+            volumeWidget(p, size: CGSize(width: width, height: max(64, unit * 0.6)))
             HStack(spacing: gap) {
                 countdownWidget(p, size: big)
                 chartWidget(p, size: big)
@@ -439,11 +465,7 @@ struct ContentView: View {
     private func soundIcon(_ kind: SoundKind, size: CGFloat, p: Palette) -> some View {
         let selected = settings.sound == kind
         return appIcon(kind.title, symbol: kind.symbol, size: size, dark: selected, p: p) {
-            if kind == .myFile && settings.customFileName == nil {
-                showImporter = true
-            } else {
-                settings.sound = kind
-            }
+            settings.sound = kind
         }
         .accessibilityAddTraits(selected ? .isSelected : [])
     }
@@ -483,7 +505,11 @@ struct ContentView: View {
         Task { @MainActor in
             guard let data = try? await item.loadTransferable(type: Data.self),
                   let image = PhotoStorage.save(data, slot: slot) else { return }
-            if slot == .square { squarePhoto = image } else { widePhoto = image }
+            switch slot {
+            case .square: squarePhoto = image
+            case .wide: widePhoto = image
+            case .hero: heroPhoto = image
+            }
         }
     }
 

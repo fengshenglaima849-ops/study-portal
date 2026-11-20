@@ -43,8 +43,6 @@ final class StudySettings: ObservableObject {
 
     @Published var keepScreenOn: Bool { didSet { save(keepScreenOn, "keepScreenOn") } }
     @Published var monoPhotos: Bool { didSet { save(monoPhotos, "monoPhotos") } }
-    @Published var customFileName: String? { didSet { save(customFileName, "customFileName") } }
-    @Published var customFileTitle: String? { didSet { save(customFileTitle, "customFileTitle") } }
 
     init() {
         let d = UserDefaults.standard
@@ -60,8 +58,6 @@ final class StudySettings: ObservableObject {
         chimeOn = d.object(forKey: "chimeOn") as? Bool ?? true
         keepScreenOn = d.object(forKey: "keepScreenOn") as? Bool ?? true
         monoPhotos = d.object(forKey: "monoPhotos") as? Bool ?? true
-        customFileName = d.string(forKey: "customFileName")
-        customFileTitle = d.string(forKey: "customFileTitle")
     }
 
     private func save(_ value: Any?, _ key: String) {

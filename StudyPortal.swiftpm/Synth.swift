@@ -104,8 +104,6 @@ final class SynthState: @unchecked Sendable {
                     (l, r) = rainSample()
                 case .lofi:
                     (l, r) = lofiSample()
-                case .myFile:
-                    break
                 }
             }
             let c = chimeSample()

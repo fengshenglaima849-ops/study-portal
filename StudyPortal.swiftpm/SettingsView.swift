@@ -9,7 +9,6 @@ struct SettingsView: View {
     @State private var newPlace = ""
     @Environment(\.dismiss) private var dismiss
     @Environment(\.colorScheme) private var scheme
-    @State private var showImporter = false
 
     var body: some View {
         let p = Palette.of(scheme)
@@ -17,6 +16,7 @@ struct SettingsView: View {
             Form {
                 Section("試験") {
                     TextField("試験名", text: $logs.examName)
+                        .submitLabel(.done)
                     DatePicker("試験日", selection: $logs.examDate, displayedComponents: .date)
                 }
 
@@ -27,6 +27,7 @@ struct SettingsView: View {
                         TextField("参考書を追加", text: $newBook)
                             .onSubmit(addBook)
                         Button("追加", action: addBook)
+                            .buttonStyle(.borderless)
                             .disabled(newBook.trimmingCharacters(in: .whitespaces).isEmpty)
                     }
                 } header: {
@@ -42,6 +43,7 @@ struct SettingsView: View {
                         TextField("場所を追加", text: $newPlace)
                             .onSubmit(addPlace)
                         Button("追加", action: addPlace)
+                            .buttonStyle(.borderless)
                             .disabled(newPlace.trimmingCharacters(in: .whitespaces).isEmpty)
                     }
                 } header: {
@@ -72,24 +74,6 @@ struct SettingsView: View {
                 }
 
                 Section {
-                    HStack {
-                        Text("いまの曲")
-                        Spacer()
-                        Text(settings.customFileTitle ?? "未選択")
-                            .foregroundStyle(.secondary)
-                            .lineLimit(1)
-                    }
-                    Button("「ファイル」から曲を選ぶ") { showImporter = true }
-                    if let error = audio.fileError {
-                        Text(error).foregroundStyle(.red)
-                    }
-                } header: {
-                    Text("自分の曲")
-                } footer: {
-                    Text("選んだ曲はアプリの中にコピーされ、くり返し再生されます。Apple Music の曲は選べません。")
-                }
-
-                Section {
                     Toggle("タイマー中は画面を消さない", isOn: $settings.keepScreenOn)
                     Toggle("写真をモノクロで表示する", isOn: $settings.monoPhotos)
                 } header: {
@@ -104,9 +88,6 @@ struct SettingsView: View {
                 }
             }
             .tint(p.accent)
-        }
-        .fileImporter(isPresented: $showImporter, allowedContentTypes: [.audio]) { result in
-            if case .success(let url) = result { audio.importFile(from: url) }
         }
     }
 

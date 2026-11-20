@@ -53,14 +53,15 @@ struct GreigeBackground: View {
 /// 細い進み具合の線
 struct ProgressLine: View {
     let progress: Double
+    var color: Color? = nil
     @Environment(\.colorScheme) private var scheme
 
     var body: some View {
-        let p = Palette.of(scheme)
+        let tint = color ?? Palette.of(scheme).text
         GeometryReader { g in
             ZStack(alignment: .leading) {
-                Capsule().fill(p.text.opacity(0.15))
-                Capsule().fill(p.text)
+                Capsule().fill(tint.opacity(0.2))
+                Capsule().fill(tint)
                     .frame(width: max(3, g.size.width * min(1, max(0, progress))))
             }
         }
