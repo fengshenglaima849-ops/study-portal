@@ -16,6 +16,7 @@ final class AppModel: ObservableObject {
         s.onSoundChange = { [weak a] in a?.apply() }
         let l = LogStore()
         t.onRecord = { [weak l] date, seconds in l?.add(date: date, seconds: seconds) }
+        t.restore()
         logs = l
         settings = s
         audio = a

@@ -1,7 +1,7 @@
 import Foundation
 import UserNotifications
 
-enum Phase {
+enum Phase: String, Codable {
     case focus, shortBreak, longBreak
 
     var title: String {
@@ -74,6 +74,7 @@ final class StudyTimer: ObservableObject {
         guard s >= 60 else { return false }
         onRecord?(Date(), Int(s))
         savedInPhase += s
+        persist()
         return true
     }
 
@@ -92,6 +93,7 @@ final class StudyTimer: ObservableObject {
         startTicker()
         audio.update(for: phase, running: true)
         rescheduleNotifications()
+        persist()
     }
 
     func pause() {
@@ -102,6 +104,7 @@ final class StudyTimer: ObservableObject {
         stopTicker()
         audio.update(for: phase, running: false)
         StudyNotifications.cancelAll()
+        persist()
     }
 
     func reset() {
@@ -115,6 +118,7 @@ final class StudyTimer: ObservableObject {
         savedInPhase = 0
         audio.update(for: phase, running: false)
         StudyNotifications.cancelAll()
+        persist()
     }
 
     /// 今の区切りを飛ばす。飛ばした集中は回数に数えないが、勉強した分は記録する
@@ -139,6 +143,7 @@ final class StudyTimer: ObservableObject {
             rescheduleNotifications()
         }
         audio.update(for: phase, running: wasRunning)
+        persist()
     }
 
     /// 設定画面で時間を変えたとき
@@ -152,6 +157,7 @@ final class StudyTimer: ObservableObject {
             remaining = duration(of: phase)
             phaseTotal = remaining
         }
+        persist()
     }
 
     /// アプリが前面に戻ったとき
@@ -187,6 +193,7 @@ final class StudyTimer: ObservableObject {
                 audio.chime()
                 audio.update(for: phase, running: false)
                 StudyNotifications.cancelAll()
+                persist()
                 return
             }
             end = end.addingTimeInterval(duration(of: phase))
@@ -197,6 +204,56 @@ final class StudyTimer: ObservableObject {
             audio.chime()
             audio.update(for: phase, running: true)
             rescheduleNotifications()
+            persist()
+        }
+    }
+
+    // MARK: - 状態の保存と復元
+    // アプリが裏で終了させられても、起動し直したときに続きから再開できるようにする
+
+    private struct Snapshot: Codable {
+        var phase: Phase
+        var isRunning: Bool
+        var remaining: TimeInterval
+        var endDate: Date?
+        var completedInCycle: Int
+        var phaseTotal: TimeInterval
+        var savedInPhase: TimeInterval
+    }
+
+    private static let stateKey = "timerState"
+
+    private func persist() {
+        let snap = Snapshot(phase: phase, isRunning: isRunning, remaining: remaining, endDate: endDate,
+                            completedInCycle: completedInCycle, phaseTotal: phaseTotal, savedInPhase: savedInPhase)
+        if let data = try? JSONEncoder().encode(snap) {
+            UserDefaults.standard.set(data, forKey: Self.stateKey)
+        }
+    }
+
+    /// 起動したときに、前回の状態に戻す。終わっていた区切りはここで記録する
+    func restore() {
+        guard let data = UserDefaults.standard.data(forKey: Self.stateKey),
+              let snap = try? JSONDecoder().decode(Snapshot.self, from: data) else { return }
+        phase = snap.phase
+        completedInCycle = snap.completedInCycle
+        phaseTotal = snap.phaseTotal
+        savedInPhase = snap.savedInPhase
+        if snap.isRunning, let end = snap.endDate {
+            endDate = end
+            isRunning = true
+            remaining = max(0, end.timeIntervalSinceNow)
+            startTicker()
+            tick()
+            if isRunning {
+                audio.update(for: phase, running: true)
+                rescheduleNotifications()
+            }
+        } else {
+            isRunning = false
+            endDate = nil
+            remaining = snap.remaining
+            audio.update(for: phase, running: false)
         }
     }
 
